@@ -13,7 +13,14 @@ const metaController = createMetaController(pokemonService);
 
 router.get('/health', getHealth);
 router.get('/meta', metaController.getMeta);
+
+router.get('/masters', pokemonController.masters);
+router.get('/schema', pokemonController.schema);
+
 router.get('/pokemon', pokemonController.list);
 router.get('/pokemon/:id', pokemonController.detail);
+router.get('/pokemon/:id/moves', pokemonController.moves);
+
+router.post('/damage/preview', pokemonController.damagePreview);
 
 module.exports = router;

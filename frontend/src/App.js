@@ -1,185 +1,315 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
 
-const metaOverview = [
-  {
-    title: '環境速度',
-    value: '中速寄り',
-    detail: '素早さ80-110帯の打ち合いが増えやすい構造'
-  },
-  {
-    title: '勝ち筋の主流',
-    value: '対面 + 終盤一貫',
-    detail: '削りとステロ展開から終盤の高火力技を通す形'
-  },
-  {
-    title: '要注意ギミック',
-    value: '積み + 先制技',
-    detail: '1ターンの隙を作るとそのまま抜かれやすい'
-  }
+const API_BASE = 'http://localhost:4000/api/v1';
+
+const speedPresets = [
+  { id: 'max', label: '最速', multiplier: 1.15 },
+  { id: 'mid', label: '準速', multiplier: 1.05 },
+  { id: 'base', label: '無振り', multiplier: 1.0 },
+  { id: 'down', label: '下降', multiplier: 0.9 }
 ];
 
-const featuredPokemon = [
-  {
-    name: 'カイリュー',
-    role: 'スイーパー / 先制圧力',
-    why: 'マルチスケイルから行動保証を取りやすく、終盤性能が高い。',
-    tips: 'ステルスロック対策としてはがね or みず受けと並べる。'
-  },
-  {
-    name: 'サーフゴー',
-    role: '崩し / 補助対策',
-    why: '補助技無効の圧力で盤面を荒らし、選出を縛りやすい。',
-    tips: '地面の一貫を切るためにふゆう持ちや飛行枠と同時採用。'
-  },
-  {
-    name: 'ディンルー',
-    role: '起点作成 / クッション',
-    why: '高耐久で行動回数を確保し、展開の起点を作りやすい。',
-    tips: '受け回しすぎると崩しに弱いので、明確な打点枠を1体入れる。'
-  },
-  {
-    name: 'ハバタクカミ',
-    role: '高速アタッカー',
-    why: '高い素早さと一致打点で対面性能が非常に高い。',
-    tips: '先制技圏内に入らないよう、削り管理を徹底する。'
-  }
-];
-
-const roleGuides = [
-  {
-    role: '先発枠',
-    summary: '初手で有利対面を作る枠',
-    checklist: ['行動保証を持つか', '対面不利でも仕事が残るか', '相手の展開を遅らせられるか']
-  },
-  {
-    role: 'クッション枠',
-    summary: '引き先として盤面を安定させる枠',
-    checklist: ['受け出し可能範囲が明確か', '回復 or 被ダメ抑制があるか', '崩しへの返し技を持つか']
-  },
-  {
-    role: '崩し枠',
-    summary: '相手の受けサイクルを壊す枠',
-    checklist: ['受け駒に通る打点があるか', '交代読みの択があるか', '終盤の詰め筋と両立できるか']
-  },
-  {
-    role: 'フィニッシャー枠',
-    summary: '終盤に全抜きを狙う枠',
-    checklist: ['先制技耐性 or 先制技持ちか', '素早さラインを満たすか', '削りサポートと噛み合うか']
-  }
-];
-
-const pickTemplates = [
-  {
-    title: '対面寄りテンプレ',
-    picks: '先発: 起点作成 / 中盤: 高速打点 / 終盤: 神速 or スカーフ',
-    usage: '3ターン目までに相手の受け駒を削り、終盤の一貫を作る。'
-  },
-  {
-    title: 'サイクル寄りテンプレ',
-    picks: '先発: クッション / 中盤: 交代戦で有利交換 / 終盤: 積みエース',
-    usage: '相手のテラスタル先出しを誘って、最後に積み技を通す。'
-  },
-  {
-    title: '展開寄りテンプレ',
-    picks: '先発: ステロ + 退場 / 中盤: 崩し / 終盤: 全抜きエース',
-    usage: '序盤で定数ダメージを入れ、終盤の技範囲で勝ち切る。'
-  }
-];
-
-const preBattleChecks = [
-  '相手の最速枠より1段階上の素早さラインを意識する',
-  '先制技の打点で落ちるHP帯に入っていないか確認する',
-  'テラスタルの攻守どちらを切るかを事前に決める',
-  '受け出し不能な相手に対する最低1つの回答を用意する'
-];
+function calcSpeed(baseSpeed, multiplier) {
+  return Math.floor(baseSpeed * multiplier);
+}
 
 function App() {
+  const [query, setQuery] = useState('カイリュー');
+  const [defenderQuery, setDefenderQuery] = useState('ディンルー');
+
+  const [attackCandidates, setAttackCandidates] = useState([]);
+  const [defenseCandidates, setDefenseCandidates] = useState([]);
+
+  const [attacker, setAttacker] = useState(null);
+  const [defender, setDefender] = useState(null);
+  const [moves, setMoves] = useState([]);
+  const [selectedMoveId, setSelectedMoveId] = useState('');
+  const [speedPreset, setSpeedPreset] = useState('max');
+  const [damage, setDamage] = useState(null);
+  const [schema, setSchema] = useState([]);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const selectedMove = useMemo(
+    () => moves.find((move) => move.move_id === selectedMoveId) || null,
+    [moves, selectedMoveId]
+  );
+
+  // 初期表示時に固定キーワードでロードする仕様のため、依存配列は空に固定。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void fetchSchema();
+    void searchAttacker('カイリュー');
+    void searchDefender('ディンルー');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 攻撃側・防御側・技・努力値プリセット変更時に再計算。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!attacker || !defender || !selectedMoveId) {
+      setDamage(null);
+      return;
+    }
+
+    void previewDamage();
+  }, [attacker, defender, selectedMoveId, speedPreset]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function fetchSchema() {
+    try {
+      const response = await fetch(`${API_BASE}/schema`);
+      const json = await response.json();
+      setSchema(json.tables || []);
+    } catch (fetchError) {
+      setError(`スキーマ取得に失敗: ${fetchError.message}`);
+    }
+  }
+
+  async function searchAttacker(keyword = query) {
+    setLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${API_BASE}/pokemon?q=${encodeURIComponent(keyword)}`);
+      const json = await response.json();
+      const items = json.items || [];
+      setAttackCandidates(items);
+
+      if (items.length > 0) {
+        await selectAttacker(items[0].pokemon_id);
+      }
+    } catch (fetchError) {
+      setError(`攻撃側ポケモン検索に失敗: ${fetchError.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function searchDefender(keyword = defenderQuery) {
+    setLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${API_BASE}/pokemon?q=${encodeURIComponent(keyword)}`);
+      const json = await response.json();
+      const items = json.items || [];
+      setDefenseCandidates(items);
+
+      if (items.length > 0) {
+        await selectDefender(items[0].pokemon_id);
+      }
+    } catch (fetchError) {
+      setError(`防御側ポケモン検索に失敗: ${fetchError.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function selectAttacker(pokemonId) {
+    try {
+      const [pokemonRes, movesRes] = await Promise.all([
+        fetch(`${API_BASE}/pokemon/${pokemonId}`),
+        fetch(`${API_BASE}/pokemon/${pokemonId}/moves`)
+      ]);
+
+      const pokemonJson = await pokemonRes.json();
+      const movesJson = await movesRes.json();
+
+      setAttacker(pokemonJson);
+      setMoves(movesJson.items || []);
+      if ((movesJson.items || []).length > 0) {
+        setSelectedMoveId(movesJson.items[0].move_id);
+      }
+    } catch (fetchError) {
+      setError(`攻撃側詳細取得に失敗: ${fetchError.message}`);
+    }
+  }
+
+  async function selectDefender(pokemonId) {
+    try {
+      const response = await fetch(`${API_BASE}/pokemon/${pokemonId}`);
+      const json = await response.json();
+      setDefender(json);
+    } catch (fetchError) {
+      setError(`防御側詳細取得に失敗: ${fetchError.message}`);
+    }
+  }
+
+  async function previewDamage() {
+    try {
+      const response = await fetch(`${API_BASE}/damage/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attackerId: attacker.pokemon_id,
+          defenderId: defender.pokemon_id,
+          moveId: selectedMoveId,
+          speedPreset
+        })
+      });
+      const json = await response.json();
+      setDamage(json.result || null);
+    } catch (fetchError) {
+      setError(`ダメージ計算に失敗: ${fetchError.message}`);
+    }
+  }
+
   return (
-    <div className="site-shell">
-      <header className="hero">
-        <p className="hero-kicker">Pokemon Battle Hub</p>
+    <div className="app-shell">
+      <header className="title-row">
         <h1>ポケモン対戦情報サイト</h1>
-        <p className="hero-text">
-          ランク対戦で勝率を上げるための情報を、1画面で確認できる実戦向けダッシュボード。
-        </p>
+        <p>構成シート以降（機能/UI/DB設計）反映版</p>
       </header>
 
-      <main className="content-grid">
-        <section className="panel">
-          <h2>環境概要</h2>
-          <div className="overview-cards">
-            {metaOverview.map((item) => (
-              <article key={item.title} className="overview-card">
-                <p className="meta-label">{item.title}</p>
-                <p className="meta-value">{item.value}</p>
-                <p className="meta-detail">{item.detail}</p>
-              </article>
+      <main className="four-grid">
+        <section className="card">
+          <h2>左上: ポケモン検索・基礎情報</h2>
+          <div className="search-row">
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="攻撃側ポケモン名" />
+            <button onClick={() => void searchAttacker()}>検索</button>
+          </div>
+          <div className="candidate-list">
+            {attackCandidates.map((pokemon) => (
+              <button key={pokemon.pokemon_id} onClick={() => void selectAttacker(pokemon.pokemon_id)}>
+                #{pokemon.pokemon_id} {pokemon.pokemon_name}
+              </button>
             ))}
           </div>
-        </section>
 
-        <section className="panel">
-          <h2>注目ポケモン</h2>
-          <div className="pokemon-list">
-            {featuredPokemon.map((pokemon) => (
-              <article key={pokemon.name} className="pokemon-card">
-                <div className="pokemon-title-row">
-                  <h3>{pokemon.name}</h3>
-                  <span>{pokemon.role}</span>
-                </div>
-                <p>{pokemon.why}</p>
-                <p className="tips">構築メモ: {pokemon.tips}</p>
-              </article>
-            ))}
-          </div>
-        </section>
+          {attacker && (
+            <div className="info-block">
+              <h3>{attacker.pokemon_name} (全国図鑑 #{attacker.pokemon_id})</h3>
+              <p>タイプ: {attacker.types.map((type) => type.type_name).join(' / ')}</p>
+              <p>特性: {attacker.abilities.map((ability) => ability.ability_name).join(' / ') || '-'}</p>
+              <p>
+                地方図鑑:{' '}
+                {attacker.dex_numbers.map((entry) => `${entry.region_name}:${entry.dex_no}`).join(' / ') || '-'}
+              </p>
 
-        <section className="panel">
-          <h2>役割別の早見表</h2>
-          <div className="role-grid">
-            {roleGuides.map((guide) => (
-              <article key={guide.role} className="role-card">
-                <h3>{guide.role}</h3>
-                <p>{guide.summary}</p>
-                <ul>
-                  {guide.checklist.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-          </div>
-        </section>
+              <table>
+                <thead>
+                  <tr>
+                    <th>能力</th>
+                    <th>数値</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>HP</td><td>{attacker.hp}</td></tr>
+                  <tr><td>攻撃</td><td>{attacker.attack}</td></tr>
+                  <tr><td>防御</td><td>{attacker.defense}</td></tr>
+                  <tr><td>特攻</td><td>{attacker.sp_attack}</td></tr>
+                  <tr><td>特防</td><td>{attacker.sp_defense}</td></tr>
+                  <tr><td>素早さ</td><td>{attacker.speed}</td></tr>
+                </tbody>
+              </table>
 
-        <section className="panel two-column">
-          <div>
-            <h2>選出テンプレ</h2>
-            <div className="template-list">
-              {pickTemplates.map((template) => (
-                <article key={template.title} className="template-card">
-                  <h3>{template.title}</h3>
-                  <p className="line">{template.picks}</p>
-                  <p>{template.usage}</p>
-                </article>
-              ))}
+              <div className="speed-row">
+                {speedPresets.map((preset) => (
+                  <span key={preset.id}>{preset.label}:{calcSpeed(attacker.speed, preset.multiplier)}</span>
+                ))}
+              </div>
             </div>
+          )}
+        </section>
+
+        <section className="card">
+          <h2>右上: 攻撃側設定</h2>
+          <div className="preset-row">
+            {speedPresets.slice(0, 3).map((preset) => (
+              <button
+                key={preset.id}
+                className={speedPreset === preset.id ? 'active' : ''}
+                onClick={() => setSpeedPreset(preset.id)}
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
 
-          <aside className="check-panel">
-            <h2>対戦前チェック</h2>
-            <ol>
-              {preBattleChecks.map((check) => (
-                <li key={check}>{check}</li>
+          <p>選択技: {selectedMove ? `${selectedMove.move_name} (${selectedMove.power})` : '未選択'}</p>
+          <p>カテゴリ: {selectedMove ? selectedMove.category : '-'}</p>
+          <p>効果: {selectedMove ? selectedMove.effect : '-'}</p>
+
+          <h3>DB設計テーブル</h3>
+          <ul className="schema-list">
+            {schema.map((row) => (
+              <li key={row.physical}>{row.physical} - {row.logical}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="card">
+          <h2>左下: 覚える技</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>技名</th>
+                <th>タイプ</th>
+                <th>威力</th>
+                <th>分類</th>
+                <th>効果</th>
+              </tr>
+            </thead>
+            <tbody>
+              {moves.map((move) => (
+                <tr
+                  key={move.move_id}
+                  className={move.move_id === selectedMoveId ? 'selected-row' : ''}
+                  onClick={() => setSelectedMoveId(move.move_id)}
+                >
+                  <td>{move.move_name}</td>
+                  <td>{move.move_type_name}</td>
+                  <td>{move.power}</td>
+                  <td>{move.category}</td>
+                  <td>{move.effect}</td>
+                </tr>
               ))}
-            </ol>
-          </aside>
+            </tbody>
+          </table>
+        </section>
+
+        <section className="card">
+          <h2>右下: ダメージ計算</h2>
+          <div className="search-row">
+            <input
+              value={defenderQuery}
+              onChange={(event) => setDefenderQuery(event.target.value)}
+              placeholder="防御側ポケモン名"
+            />
+            <button onClick={() => void searchDefender()}>検索</button>
+          </div>
+          <div className="candidate-list">
+            {defenseCandidates.map((pokemon) => (
+              <button key={pokemon.pokemon_id} onClick={() => void selectDefender(pokemon.pokemon_id)}>
+                #{pokemon.pokemon_id} {pokemon.pokemon_name}
+              </button>
+            ))}
+          </div>
+
+          {defender && (
+            <div className="info-block">
+              <h3>{defender.pokemon_name}</h3>
+              <p>タイプ: {defender.types.map((type) => type.type_name).join(' / ')}</p>
+              <p>HP: {defender.hp} / 防御: {defender.defense} / 特防: {defender.sp_defense}</p>
+            </div>
+          )}
+
+          {damage && (
+            <div className="damage-box">
+              <p>最小: {damage.min_percent}%</p>
+              <p>期待値: {damage.expected_percent}%</p>
+              <p>最大: {damage.max_percent}%</p>
+            </div>
+          )}
         </section>
       </main>
 
-      <footer className="footer">
-        <p>更新しやすいように、データは `App.js` の配列で管理しています。</p>
-      </footer>
+      {(loading || error) && (
+        <footer className="status-row">
+          {loading ? '読み込み中...' : error}
+        </footer>
+      )}
     </div>
   );
 }
