@@ -1,16 +1,17 @@
 # Pokemon Battle Hub
 
 ポケモン対戦向け情報サイトです。  
-フロントエンド（React）に加えて、将来のDB連携を見据えた専用バックエンドを同梱しています。
+フロントエンド（React）と専用バックエンド（Express）を同一プロジェクトで管理しています。
 
 ## 構成
 
-- `src/`: フロントエンド
-- `backend/`: 専用バックエンドAPI（Express）
+- `frontend/`: フロントエンド
+- `backend/`: 専用バックエンドAPI
 
 ## フロントエンド起動
 
 ```bash
+cd frontend
 npm install
 npm start
 ```
@@ -43,5 +44,6 @@ Service/Controllerの再利用を前提に移行できます。
 ## 本番ビルド（フロントエンド）
 
 ```bash
+cd frontend
 npm run build
 ```
