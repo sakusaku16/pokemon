@@ -92,6 +92,54 @@ function categoryLabel(category) {
   return category;
 }
 
+function PresetStatsTable({ pokemon }) {
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>能力</th>
+          <th>最速</th>
+          <th>準速</th>
+          <th>無振り</th>
+          <th>下降</th>
+        </tr>
+      </thead>
+      <tbody>
+        {STAT_ROWS.map((row) => (
+          <tr key={row.key}>
+            <td>{row.label}</td>
+            <td>{calcPresetStat(pokemon[row.key], row.key, 'max')}</td>
+            <td>{calcPresetStat(pokemon[row.key], row.key, 'mid')}</td>
+            <td>{calcPresetStat(pokemon[row.key], row.key, 'base')}</td>
+            <td>{calcPresetStat(pokemon[row.key], row.key, 'down')}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function BaseStatsTable({ pokemon }) {
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>能力</th>
+          <th>種族値(不変)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {STAT_ROWS.map((row) => (
+          <tr key={row.key}>
+            <td>{row.label}</td>
+            <td>{pokemon[row.key]}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function RadarChart({ title, pokemon, evs }) {
   if (!pokemon) {
     return null;
@@ -203,6 +251,28 @@ function App() {
     () => moves.find((move) => move.move_id === selectedMoveId) || null,
     [moves, selectedMoveId]
   );
+
+  const displayMoves = useMemo(() => {
+    const indexByType = new Map(TYPE_ORDER.map((type, index) => [type, index]));
+
+    return [...moves].sort((left, right) => {
+      const leftType = indexByType.get(left.move_type_name) ?? 999;
+      const rightType = indexByType.get(right.move_type_name) ?? 999;
+
+      if (leftType !== rightType) {
+        return leftType - rightType;
+      }
+
+      const leftTeraburst = left.move_name === 'テラバースト';
+      const rightTeraburst = right.move_name === 'テラバースト';
+
+      if (leftTeraburst !== rightTeraburst) {
+        return leftTeraburst ? 1 : -1;
+      }
+
+      return left.move_name.localeCompare(right.move_name, 'ja');
+    });
+  }, [moves]);
 
   useEffect(() => {
     void fetchSchema();
@@ -365,31 +435,17 @@ function App() {
                 ))}
               </div>
 
-              <table>
-                <thead>
-                  <tr>
-                    <th>能力</th>
-                    <th>最速</th>
-                    <th>準速</th>
-                    <th>無振り</th>
-                    <th>下降</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {STAT_ROWS.map((row) => (
-                    <tr key={row.key}>
-                      <td>{row.label}</td>
-                      <td>{calcPresetStat(attacker[row.key], row.key, 'max')}</td>
-                      <td>{calcPresetStat(attacker[row.key], row.key, 'mid')}</td>
-                      <td>{calcPresetStat(attacker[row.key], row.key, 'base')}</td>
-                      <td>{calcPresetStat(attacker[row.key], row.key, 'down')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="after-dex-grid">
+                <div className="after-dex-column">
+                  <BaseStatsTable pokemon={attacker} />
+                  <RadarChart title="種族値グラフ(攻撃側)" pokemon={attacker} evs={attackerEvs} />
+                </div>
 
-              <EffortEditor evs={attackerEvs} onChange={updateAttackerEv} />
-              <RadarChart title="種族値グラフ(攻撃側)" pokemon={attacker} evs={attackerEvs} />
+                <div className="after-dex-column">
+                  <EffortEditor evs={attackerEvs} onChange={updateAttackerEv} />
+                  <PresetStatsTable pokemon={attacker} />
+                </div>
+              </div>
             </div>
           )}
         </section>
@@ -422,7 +478,7 @@ function App() {
               </tr>
             </thead>
             <tbody>
-              {moves.map((move) => (
+              {displayMoves.map((move) => (
                 <tr
                   key={move.move_id}
                   className={move.move_id === selectedMoveId ? 'selected-row' : ''}
@@ -459,30 +515,28 @@ function App() {
 
           {defender && (
             <div className="info-block">
-              <h3>{defender.pokemon_name}</h3>
+              <h3>{defender.pokemon_name} (全国図鑑 #{defender.pokemon_id})</h3>
               <p>タイプ: {sortTypesByOrder(defender.types).map((type) => type.type_name).join(' / ')}</p>
+              <p>特性: {defender.abilities.map((ability) => ability.ability_name).join(' / ') || '-'}</p>
 
-              <table>
-                <thead>
-                  <tr>
-                    <th>能力</th>
-                    <th>種族値</th>
-                    <th>努力値込み</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {STAT_ROWS.map((row) => (
-                    <tr key={row.key}>
-                      <td>{row.label}</td>
-                      <td>{defender[row.key]}</td>
-                      <td>{effectiveStat(defender[row.key], defenderEvs[row.key])}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="vertical-list">
+                <strong>地方図鑑番号</strong>
+                {defender.dex_numbers.map((entry) => (
+                  <span key={`${entry.region_id}-${entry.dex_no}`}>{entry.region_name}: {entry.dex_no}</span>
+                ))}
+              </div>
 
-              <EffortEditor evs={defenderEvs} onChange={updateDefenderEv} />
-              <RadarChart title="種族値グラフ(受け側)" pokemon={defender} evs={defenderEvs} />
+              <div className="after-dex-grid">
+                <div className="after-dex-column">
+                  <BaseStatsTable pokemon={defender} />
+                  <RadarChart title="種族値グラフ(受け側)" pokemon={defender} evs={defenderEvs} />
+                </div>
+
+                <div className="after-dex-column">
+                  <EffortEditor evs={defenderEvs} onChange={updateDefenderEv} />
+                  <PresetStatsTable pokemon={defender} />
+                </div>
+              </div>
             </div>
           )}
 

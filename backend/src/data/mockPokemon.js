@@ -34,6 +34,21 @@ const abilities = [
     ability_id: 3,
     ability_name: 'わざわいのうつわ',
     description: '場にいる間、相手の特攻を下げる。'
+  },
+  {
+    ability_id: 4,
+    ability_name: 'せいしんりょく',
+    description: 'ひるまない。いかくで攻撃が下がらない。'
+  },
+  {
+    ability_id: 5,
+    ability_name: 'かるわざ',
+    description: '持ち物がなくなると素早さが上がる。'
+  },
+  {
+    ability_id: 6,
+    ability_name: 'フェアリースキン',
+    description: 'ノーマルタイプの技がフェアリータイプになり、威力が上がる。'
   }
 ];
 
@@ -57,8 +72,8 @@ const pokemons = [
     type1_id: 15,
     type2_id: 10,
     ability1_id: 1,
-    ability2_id: null,
-    ability3_id: null,
+    ability2_id: 4,
+    ability3_id: 5,
     hp: 91,
     attack: 134,
     defense: 95,
@@ -72,7 +87,7 @@ const pokemons = [
     type1_id: 17,
     type2_id: 14,
     ability1_id: 2,
-    ability2_id: null,
+    ability2_id: 6,
     ability3_id: null,
     hp: 87,
     attack: 60,
@@ -87,7 +102,7 @@ const pokemons = [
     type1_id: 16,
     type2_id: 9,
     ability1_id: 3,
-    ability2_id: null,
+    ability2_id: 4,
     ability3_id: null,
     hp: 155,
     attack: 110,
