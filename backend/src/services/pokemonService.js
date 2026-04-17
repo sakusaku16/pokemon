@@ -73,7 +73,21 @@ class PokemonService {
     return { types, abilities, regions };
   }
 
-  async getDamagePreview({ attackerId, defenderId, moveId, speedPreset = 'max' }) {
+  getSafeEv(value) {
+    const parsed = Number(value);
+
+    if (!Number.isFinite(parsed)) {
+      return 0;
+    }
+
+    return Math.max(0, Math.min(252, Math.floor(parsed)));
+  }
+
+  getDerivedStat(baseStat, ev) {
+    return baseStat + Math.floor(this.getSafeEv(ev) / 8);
+  }
+
+  async getDamagePreview({ attackerId, defenderId, moveId, attackerEv = {}, defenderEv = {} }) {
     const attacker = await this.repository.findPokemonById(attackerId);
     const defender = await this.repository.findPokemonById(defenderId);
     const move = await this.repository.findMoveById(moveId);
@@ -82,15 +96,18 @@ class PokemonService {
       return null;
     }
 
-    const attackBase = move.category === 'physical' ? attacker.attack : attacker.sp_attack;
-    const defenseBase = move.category === 'physical' ? defender.defense : defender.sp_defense;
+    const attackerAttack = this.getDerivedStat(attacker.attack, attackerEv.attack);
+    const attackerSpAttack = this.getDerivedStat(attacker.sp_attack, attackerEv.sp_attack);
 
-    const presetMultiplier = speedPreset === 'max' ? 1.15 : speedPreset === 'mid' ? 1.05 : 1.0;
-    const attackStat = Math.floor(attackBase * presetMultiplier);
-    const defenseStat = Math.max(1, defenseBase);
+    const defenderDefense = this.getDerivedStat(defender.defense, defenderEv.defense);
+    const defenderSpDefense = this.getDerivedStat(defender.sp_defense, defenderEv.sp_defense);
+    const defenderHp = this.getDerivedStat(defender.hp, defenderEv.hp);
 
-    const expectedDamage = (attackStat * move.power) / defenseStat;
-    const expectedPercent = Math.min(999, (expectedDamage / defender.hp) * 22);
+    const attackStat = move.category === 'physical' ? attackerAttack : attackerSpAttack;
+    const defenseStat = move.category === 'physical' ? defenderDefense : defenderSpDefense;
+
+    const expectedDamage = ((attackStat * move.power) / Math.max(1, defenseStat)) * 0.35;
+    const expectedPercent = Math.min(999, (expectedDamage / Math.max(1, defenderHp)) * 100);
 
     return {
       attacker: {
@@ -106,6 +123,11 @@ class PokemonService {
         move_name: move.move_name,
         power: move.power,
         category: move.category
+      },
+      derived_stats: {
+        attack_stat: attackStat,
+        defense_stat: defenseStat,
+        defender_hp: defenderHp
       },
       result: {
         min_percent: Number((expectedPercent * 0.85).toFixed(1)),
